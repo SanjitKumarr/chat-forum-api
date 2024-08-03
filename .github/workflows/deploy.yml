@@ -1,64 +1,44 @@
-name: Deploy to AWS ECS
+name: Deploy to ECS
 
 on:
   push:
     branches:
-      - main  # Trigger deployment on push to the main branch
+      - main
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v2
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v2
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '20'
 
-    - name: Log in to Amazon ECR
-      uses: aws-actions/amazon-ecr-login@v1
+      - name: Install dependencies
+        run: npm install
 
-    - name: Build and push Docker image
-      run: |
-        docker build -t ${{ secrets.ECR_REPOSITORY }}:latest .
-        docker push ${{ secrets.ECR_REPOSITORY }}:latest
+      - name: Build Docker image
+        run: docker build -t your-image-name .
 
-    - name: Configure AWS CLI
-      uses: aws-actions/configure-aws-credentials@v2
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ secrets.AWS_REGION }}
+      - name: Log in to Amazon ECR
+        run: |
+          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
 
-    - name: Register new task definition
-      id: register-task
-      run: |
-        TASK_DEFINITION=$(aws ecs register-task-definition \
-          --family ${{ secrets.ECS_TASK_DEFINITION_FAMILY }} \
-          --container-definitions '[
-            {
-              "name": "my-container",
-              "image": "${{ secrets.ECR_REPOSITORY }}:latest",
-              "memory": 512,
-              "cpu": 256,
-              "essential": true,
-              "portMappings": [
-                {
-                  "containerPort": 3000,
-                  "hostPort": 3000
-                }
-              ]
-            }
-          ]' \
-          --query 'taskDefinition.taskDefinitionArn' \
-          --output text)
-        echo "TASK_DEFINITION=$TASK_DEFINITION" >> $GITHUB_ENV
+      - name: Push Docker image
+        run: |
+          docker tag your-image-name:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/your-image-repository:latest
+          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/your-image-repository:latest
 
-    - name: Update ECS service
-      run: |
-        aws ecs update-service \
-          --cluster ${{ secrets.ECS_CLUSTER }} \
-          --service ${{ secrets.ECS_SERVICE }} \
-          --task-definition ${{ env.TASK_DEFINITION }} \
-          --desired-count 1
+      - name: Deploy to ECS
+        run: |
+          ecs-deploy \
+            --cluster your-cluster-name \
+            --service-name your-service-name \
+            --image ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/your-image-repository:latest
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
